@@ -1,0 +1,9 @@
+# Everything here is owned by one person while this is being stood up.
+#
+# Not because anything in this repository is sensitive — it is public, and holds
+# no credential — but because the check runs in every repository in the
+# organisation. A careless change here fails everybody's pull requests at once,
+# so the diff reaches considerably further than it looks.
+#
+# This should widen as the check settles and the rollout in OPS-127 completes.
+*       @imkarrer

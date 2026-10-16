@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: catalog-check
+  description: The check that every flox repository declares what it is and who owns it.
+  labels:
+    flox.dev/classification: internal-tooling
+    flox.dev/max-tier: manual
+spec:
+  type: service
+  lifecycle: active
+  owner: group:linear/aor-59

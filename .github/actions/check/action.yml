@@ -1,0 +1,56 @@
+# Runs one named check against the repository it is called from.
+#
+# One check per invocation, so the caller can give each its own job and each
+# appears as a separate entry in the checks list rather than hiding in a log.
+#
+# **Every check here holds no credential.** That is the invariant, not an
+# accident: these run in every repository in the organisation, and anything
+# needing a secret would mean distributing one. Whether a repository is actually
+# being scanned is therefore not checked here — a workflow token cannot read
+# Dependabot alerts at all — and lives instead in the one place that holds one key.
+#
+# A composite action rather than a reusable workflow for the checks themselves:
+# GitHub fetches an action's source while resolving `uses:`, so a caller needs
+# nothing checked out but its own repository.
+name: catalog-check
+description: Run one of the checks every flox repository must pass.
+
+inputs:
+  check:
+    description: Which check to run. Today there is one — declaration.
+    required: false
+    default: declaration
+  path:
+    description: Declaration to read, relative to the repository root.
+    required: false
+    default: catalog-info.yaml
+  python-version:
+    required: false
+    default: '3.12'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - shell: bash
+      run: pip install --disable-pip-version-check pyyaml
+
+    - shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CHECK: ${{ inputs.check }}
+        DECLARATION: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+        # github.action_path is .github/actions/check inside this repository's
+        # fetched source, so the checkers are three levels up.
+        root="$(cd "$ACTION_PATH/../../.." && pwd)"
+        export PYTHONPATH="$root"
+        case "$CHECK" in
+          declaration) python3 "$root/declaration.py" --path "$DECLARATION" ;;
+          *) echo "Unknown check '$CHECK'. Valid: declaration." >&2
+             exit 2 ;;
+        esac

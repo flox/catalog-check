@@ -1,0 +1,39 @@
+# The check every flox repository must pass.
+#
+# Repositories do not call this themselves. An organisation ruleset names this
+# file as a required workflow, and GitHub injects it into pull requests across
+# the organisation — so the list of checks lives in one place and adding one here
+# adds it everywhere, which is the point.
+#
+# This repository is public for one reason: a ruleset may only require a workflow
+# from a repository at least as visible as the one it runs on. A private source
+# would reach private repositories only, and 83 of the live ones are public.
+#
+# Nothing here reads a credential, and nothing here needs to. See the action.
+name: catalog-check
+
+on:
+  # Kept callable directly so a repository can adopt the check ahead of the
+  # ruleset, and so this repository can run it against itself.
+  workflow_call:
+    inputs:
+      path:
+        type: string
+        default: catalog-info.yaml
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  declaration:
+    name: declaration is complete
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: flox/catalog-check/.github/actions/check@main
+        with:
+          check: declaration
+          path: ${{ inputs.path || 'catalog-info.yaml' }}
