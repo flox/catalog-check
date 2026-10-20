@@ -181,7 +181,15 @@ def targets(text):
                 "%r. A declaration is evidence about the repository it sits in, "
                 "and a target elsewhere could change without a reviewed commit "
                 "here." % target])
-        cleaned.append(target.strip().lstrip("./"))
+        # Strip one leading "./" rather than lstrip("./"), which takes a *set*
+        # of characters and ate the dot of a dotted directory: "./.github/x"
+        # came back as "github/x", and the check then reported a target that
+        # does not exist while the real one went unchecked. Relative-path
+        # prefixes are removed one segment at a time for the same reason.
+        cleaned_target = target.strip()
+        while cleaned_target.startswith("./"):
+            cleaned_target = cleaned_target[2:]
+        cleaned.append(cleaned_target)
     return cleaned
 
 

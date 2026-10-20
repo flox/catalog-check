@@ -355,3 +355,41 @@ class TestActionsEcosystem(unittest.TestCase):
         self.assertEqual(
             declaration.uncovered(["src/web-ui"], self.root),
             [".github/actions/common-setup", ".github/workflows"])
+
+
+class TestTargetPathsWithLeadingDots(unittest.TestCase):
+    """`./.github/x` must not become `github/x`.
+
+    It did. The normalisation was `lstrip("./")`, which takes a set of
+    characters rather than a prefix, so it removed the dot of the dotted
+    directory as well. The check then reported a target that does not exist,
+    while the directory it was meant to cover went unchecked — a false failure
+    hiding a real gap, which is the worst of both.
+    """
+
+    def location(self, *targets):
+        return ("apiVersion: backstage.io/v1alpha1\n"
+                "kind: Location\n"
+                "metadata:\n  name: t\n"
+                "spec:\n  type: url\n  targets:\n"
+                + "".join("    - %s\n" % t for t in targets))
+
+    def test_a_dotted_directory_keeps_its_dot(self):
+        self.assertEqual(
+            declaration.targets(self.location("./.github/catalog-info.yaml")),
+            [".github/catalog-info.yaml"])
+
+    def test_a_dotted_directory_without_a_prefix_is_unchanged(self):
+        self.assertEqual(
+            declaration.targets(self.location(".github/catalog-info.yaml")),
+            [".github/catalog-info.yaml"])
+
+    def test_an_ordinary_relative_prefix_is_still_removed(self):
+        self.assertEqual(
+            declaration.targets(self.location("./src/web-ui/catalog-info.yaml")),
+            ["src/web-ui/catalog-info.yaml"])
+
+    def test_repeated_prefixes_are_removed_a_segment_at_a_time(self):
+        self.assertEqual(
+            declaration.targets(self.location("././.github/x/catalog-info.yaml")),
+            [".github/x/catalog-info.yaml"])
