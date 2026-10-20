@@ -87,7 +87,17 @@ MANIFESTS = (
     "uv.lock", "poetry.lock", "Pipfile.lock", "requirements.txt", "pyproject.toml",
     "Cargo.lock", "Cargo.toml", "go.mod", "Gemfile.lock", "composer.lock",
     "pom.xml", "build.gradle", "build.gradle.kts", "mix.lock", "pubspec.lock",
+    # GitHub Actions is an ecosystem like any other and its dependencies are
+    # pinned third-party code. An action's own `uses:` references live in
+    # action.yml, which is what Dependabot updates for a composite or JavaScript
+    # action, so a directory holding one carries dependencies.
+    "action.yml", "action.yaml",
 )
+
+# Workflows are the other half of that ecosystem, and they are not a fixed
+# filename — every file in this directory is a manifest. Treated specially
+# rather than by extension, because a .yml anywhere else is configuration.
+WORKFLOW_DIRECTORY = ".github/workflows"
 
 # Not swept for manifests: vendored or generated trees are somebody else's
 # dependencies, and the tooling does not raise findings against them either.
@@ -301,13 +311,23 @@ def _release_workflows(doc):
 
 
 def manifest_directories(root="."):
-    """Directories under `root` holding a dependency manifest, relative to it."""
+    """Directories under `root` holding a dependency manifest, relative to it.
+
+    "Manifest" means whatever the scanner would raise a finding against, so the
+    GitHub Actions ecosystem counts: an alert naming `.github/workflows/ci.yml`
+    has to resolve to an owner the same as one naming a lockfile, and until this
+    included them a repository could be fully declared and still have an
+    alertable surface no declaration covered.
+    """
     found = set()
     for here, directories, files in os.walk(root):
         directories[:] = [d for d in directories if d not in SKIP_DIRECTORIES]
+        relative = os.path.relpath(here, root)
+        relative = "" if relative == "." else relative.replace(os.sep, "/")
         if any(f in MANIFESTS for f in files):
-            relative = os.path.relpath(here, root)
-            found.add("" if relative == "." else relative.replace(os.sep, "/"))
+            found.add(relative)
+        elif relative == WORKFLOW_DIRECTORY and files:
+            found.add(relative)
     return found
 
 
