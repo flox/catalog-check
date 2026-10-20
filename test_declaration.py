@@ -292,3 +292,104 @@ class TestStandsAlone(unittest.TestCase):
             env=dict(os.environ, PYTHONPATH=root, PYTHONDONTWRITEBYTECODE="1"))
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("auto", out.stdout)
+
+
+class TestActionsEcosystem(unittest.TestCase):
+    """GitHub Actions is an ecosystem, and alerts from it need an owner too.
+
+    This was the gap that let floxhub pass while three alertable directories had
+    no declaration behind them: the manifest list knew about lockfiles and said
+    nothing about workflows or action definitions. A repository could be fully
+    declared and still route an alert nowhere.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+
+    def write(self, relative):
+        path = os.path.join(self.root, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write("# test\n")
+
+    def test_a_workflow_directory_carries_dependencies(self):
+        """Dependabot's github-actions ecosystem raises findings against these."""
+        self.write(".github/workflows/ci.yml")
+        self.assertIn(".github/workflows",
+                      declaration.manifest_directories(self.root))
+
+    def test_an_empty_workflow_directory_does_not(self):
+        os.makedirs(os.path.join(self.root, ".github/workflows"))
+        self.assertNotIn(".github/workflows",
+                         declaration.manifest_directories(self.root))
+
+    def test_a_composite_action_carries_dependencies(self):
+        """Its `uses:` references are pinned third-party code."""
+        self.write(".github/actions/common-setup/action.yml")
+        self.assertIn(".github/actions/common-setup",
+                      declaration.manifest_directories(self.root))
+        self.write("tools/release/action.yaml")
+        self.assertIn("tools/release",
+                      declaration.manifest_directories(self.root))
+
+    def test_yaml_elsewhere_is_configuration_not_a_manifest(self):
+        """Only the workflow directory is special. A .yml in src/ is config, and
+        treating every yaml as a manifest would demand a declaration beside
+        every settings file in the repository."""
+        self.write("src/thing/config.yml")
+        self.write("deploy/values.yaml")
+        found = declaration.manifest_directories(self.root)
+        self.assertNotIn("src/thing", found)
+        self.assertNotIn("deploy", found)
+
+    def test_a_declaration_at_dotgithub_covers_both(self):
+        """Which is what lets one descriptor own CI rather than three."""
+        self.write(".github/workflows/ci.yml")
+        self.write(".github/actions/common-setup/action.yml")
+        self.assertEqual(declaration.uncovered([".github"], self.root), [])
+
+    def test_without_that_declaration_both_are_reported(self):
+        self.write(".github/workflows/ci.yml")
+        self.write(".github/actions/common-setup/action.yml")
+        self.assertEqual(
+            declaration.uncovered(["src/web-ui"], self.root),
+            [".github/actions/common-setup", ".github/workflows"])
+
+
+class TestTargetPathsWithLeadingDots(unittest.TestCase):
+    """`./.github/x` must not become `github/x`.
+
+    It did. The normalisation was `lstrip("./")`, which takes a set of
+    characters rather than a prefix, so it removed the dot of the dotted
+    directory as well. The check then reported a target that does not exist,
+    while the directory it was meant to cover went unchecked — a false failure
+    hiding a real gap, which is the worst of both.
+    """
+
+    def location(self, *targets):
+        return ("apiVersion: backstage.io/v1alpha1\n"
+                "kind: Location\n"
+                "metadata:\n  name: t\n"
+                "spec:\n  type: url\n  targets:\n"
+                + "".join("    - %s\n" % t for t in targets))
+
+    def test_a_dotted_directory_keeps_its_dot(self):
+        self.assertEqual(
+            declaration.targets(self.location("./.github/catalog-info.yaml")),
+            [".github/catalog-info.yaml"])
+
+    def test_a_dotted_directory_without_a_prefix_is_unchanged(self):
+        self.assertEqual(
+            declaration.targets(self.location(".github/catalog-info.yaml")),
+            [".github/catalog-info.yaml"])
+
+    def test_an_ordinary_relative_prefix_is_still_removed(self):
+        self.assertEqual(
+            declaration.targets(self.location("./src/web-ui/catalog-info.yaml")),
+            ["src/web-ui/catalog-info.yaml"])
+
+    def test_repeated_prefixes_are_removed_a_segment_at_a_time(self):
+        self.assertEqual(
+            declaration.targets(self.location("././.github/x/catalog-info.yaml")),
+            [".github/x/catalog-info.yaml"])
